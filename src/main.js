@@ -25,10 +25,15 @@ const player = new PlayerAvatar(gl, {
 
 let projectionMatrix = mat4Perspective(Math.PI / 4, 1, 0.1, 200);
 let lastTime = 0;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 const camera = {
   distance: 5.6,
   yaw: 0,
   pitch: -0.45,
+  minPitch: -1.2,
+  maxPitch: 0.35,
+  sensitivity: 0.0025,
   position: [0, 2.5, -6],
   targetOffset: [0, 1.2, 0],
   verticalOffset: 0.4,
@@ -61,10 +66,14 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-function updateCamera(dt) {
+function updateCamera(dt, mouseDelta = { dx: 0, dy: 0 }) {
   const smoothing = 1 - Math.exp(-dt / Math.max(camera.response, 0.001));
-  camera.yaw += (player.yaw - camera.yaw) * smoothing;
-  camera.pitch += (player.pitch - camera.pitch) * smoothing;
+  camera.yaw -= mouseDelta.dx * camera.sensitivity;
+  camera.pitch = clamp(
+    camera.pitch - mouseDelta.dy * camera.sensitivity,
+    camera.minPitch,
+    camera.maxPitch
+  );
 
   const horizontalDistance = Math.cos(camera.pitch) * camera.distance;
   const desiredPosition = [
@@ -84,8 +93,9 @@ function render(time) {
   const dt = (time - lastTime) / 1000 || 0;
   lastTime = time;
 
-  player.update(dt, input);
-  updateCamera(dt);
+  const mouseDelta = input.consumeMouse();
+  player.update(dt, input, camera.yaw);
+  updateCamera(dt, mouseDelta);
 
   const viewMatrix = mat4LookAt(camera.position, camera.target, [0, 1, 0]);
 
