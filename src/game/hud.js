@@ -3,10 +3,9 @@ export class HUD {
     this.el = element;
     this.stats = {
       speed: 0,
-      rpm: 0,
-      turbo: 0,
+      stamina: 1,
+      surface: 'pavimento',
       time: 0,
-      traffic: 0,
     };
   }
 
@@ -16,11 +15,12 @@ export class HUD {
   }
 
   render() {
+    const staminaPercent = Math.round(this.stats.stamina * 100);
+    const surfaceLabel = this.stats.surface.charAt(0).toUpperCase() + this.stats.surface.slice(1);
     this.el.innerHTML = `
       <div><strong>Velocidade:</strong> ${this.stats.speed.toFixed(1)} km/h</div>
-      <div><strong>RPM:</strong> ${this.stats.rpm.toFixed(0)}</div>
-      <div><strong>Turbo:</strong> ${(this.stats.turbo * 100).toFixed(0)}%</div>
-      <div><strong>Tráfego:</strong> ${this.stats.traffic}</div>
+      <div><strong>Stamina:</strong> ${staminaPercent}%</div>
+      <div><strong>Superfície:</strong> ${surfaceLabel}</div>
       <div><strong>Tempo:</strong> ${this.stats.time.toFixed(1)}s</div>
     `;
   }

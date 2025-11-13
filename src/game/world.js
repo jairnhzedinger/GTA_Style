@@ -1,7 +1,6 @@
 import { Mesh } from '../engine/gl.js';
 import { createBox } from '../engine/geometry.js';
 import { composeTransform } from '../engine/math.js';
-import { NpcCar } from './player.js';
 
 class StaticObject {
   constructor(gl, geometry, position, scale = [1, 1, 1]) {
@@ -22,9 +21,20 @@ function randomRange(min, max) {
 
 function createBuilding(gl, x, z) {
   const height = randomRange(3, 12);
+  const width = randomRange(3, 6);
+  const depth = randomRange(3, 6);
   const color = [randomRange(0.2, 0.6), randomRange(0.2, 0.5), randomRange(0.2, 0.6)];
-  const geometry = createBox({ width: randomRange(3, 6), height, depth: randomRange(3, 6), color });
-  return new StaticObject(gl, geometry, [x, height / 2, z]);
+  const geometry = createBox({ width, height, depth, color });
+  const building = new StaticObject(gl, geometry, [x, height / 2, z]);
+  const padding = 0.6;
+  building.collider = {
+    minX: x - width / 2 - padding,
+    maxX: x + width / 2 + padding,
+    minZ: z - depth / 2 - padding,
+    maxZ: z + depth / 2 + padding,
+    padding: 0.02,
+  };
+  return building;
 }
 
 function createRoad(gl, width, depth, position) {
@@ -86,14 +96,13 @@ function createUmbrella(gl, position, colors) {
 
 export function createWorld(gl) {
   const staticObjects = [];
-  const traffic = [];
-
   const collision = {
     worldBounds: { minX: -70, maxX: 70, minZ: -45, maxZ: 90 },
     restrictedZones: [
-      { minX: -90, maxX: 90, minZ: -210, maxZ: -35, type: 'water' },
+      { minX: -90, maxX: 90, minZ: -210, maxZ: -35, type: 'água', groundHeight: -0.25, speedModifier: 0 },
     ],
-    sandZones: [{ minX: -80, maxX: 80, minZ: -35, maxZ: -5 }],
+    sandZones: [{ minX: -80, maxX: 80, minZ: -35, maxZ: -5, groundHeight: -0.05, speedModifier: 0.65 }],
+    solidZones: [],
   };
 
   staticObjects.push(createPlane(gl, 200, 200, [0, -0.32, -110], [0.08, 0.28, 0.52], 0.2));
@@ -157,35 +166,14 @@ export function createWorld(gl) {
     for (let z = 14; z <= 86; z += 12) {
       if (z < 20 && Math.abs(x) < 35) continue;
       if (Math.abs(x) < 8 && z > 32 && z < 70) continue;
-      staticObjects.push(createBuilding(gl, x + randomRange(-1.5, 1.5), z + randomRange(-1.5, 1.5)));
+      const building = createBuilding(gl, x + randomRange(-1.5, 1.5), z + randomRange(-1.5, 1.5));
+      staticObjects.push(building);
+      collision.solidZones.push(building.collider);
     }
   }
 
-  const npcPaths = [
-    [
-      [-40, 0.35, 20],
-      [40, 0.35, 20],
-      [40, 0.35, 80],
-      [-40, 0.35, 80],
-    ],
-    [
-      [-25, 0.35, 35],
-      [25, 0.35, 35],
-      [25, 0.35, 65],
-      [-25, 0.35, 65],
-    ],
-  ];
-
-  npcPaths.forEach((path) => {
-    const color = [randomRange(0.5, 1), randomRange(0.3, 0.7), randomRange(0.1, 0.3)];
-    const car = new NpcCar(gl, path, randomRange(4, 10), color);
-    car.position = [...path[0]];
-    traffic.push(car);
-  });
-
   return {
     staticObjects,
-    traffic,
     collision,
   };
 }

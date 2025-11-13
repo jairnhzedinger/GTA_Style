@@ -21,16 +21,19 @@ const world = createWorld(gl);
 const player = new PlayerAvatar(gl, {
   color: [0.2, 0.7, 1],
   collision: world.collision,
-  bounds: world.collision.worldBounds,
 });
 
 let projectionMatrix = mat4Perspective(Math.PI / 4, 1, 0.1, 200);
 let lastTime = 0;
 const camera = {
-  distance: 14,
+  distance: 5.6,
   yaw: 0,
-  pitch: -0.4,
-  position: [0, 10, 10],
+  pitch: -0.45,
+  position: [0, 2.5, -6],
+  targetOffset: [0, 1.2, 0],
+  verticalOffset: 0.4,
+  followOffset: [0, 0.15, 0],
+  response: 0.12,
 };
 
 const mixVec3 = (a, b, t) => [
@@ -59,18 +62,21 @@ window.addEventListener('resize', resize);
 resize();
 
 function updateCamera(dt) {
-  const { dx, dy } = input.consumeMouse();
-  camera.yaw -= dx * 0.002;
-  camera.pitch = Math.max(-1.2, Math.min(-0.1, camera.pitch - dy * 0.002));
-  const offset = [
-    Math.sin(camera.yaw) * Math.cos(camera.pitch) * camera.distance,
-    Math.sin(-camera.pitch) * camera.distance * 0.5 + 5,
-    Math.cos(camera.yaw) * Math.cos(camera.pitch) * camera.distance,
+  const smoothing = 1 - Math.exp(-dt / Math.max(camera.response, 0.001));
+  camera.yaw += (player.yaw - camera.yaw) * smoothing;
+  camera.pitch += (player.pitch - camera.pitch) * smoothing;
+
+  const horizontalDistance = Math.cos(camera.pitch) * camera.distance;
+  const desiredPosition = [
+    player.position[0] - Math.sin(camera.yaw) * horizontalDistance + camera.followOffset[0],
+    player.position[1] + Math.sin(-camera.pitch) * camera.distance + camera.verticalOffset + camera.followOffset[1],
+    player.position[2] - Math.cos(camera.yaw) * horizontalDistance + camera.followOffset[2],
   ];
-  camera.position = [
-    player.position[0] - offset[0],
-    player.position[1] + offset[1],
-    player.position[2] - offset[2],
+  camera.position = mixVec3(camera.position, desiredPosition, smoothing);
+  camera.target = [
+    player.position[0] + camera.targetOffset[0],
+    player.position[1] + camera.targetOffset[1],
+    player.position[2] + camera.targetOffset[2],
   ];
 }
 
@@ -79,10 +85,9 @@ function render(time) {
   lastTime = time;
 
   player.update(dt, input);
-  world.traffic.forEach((npc) => npc.update(dt));
   updateCamera(dt);
 
-  const viewMatrix = mat4LookAt(camera.position, player.position, [0, 1, 0]);
+  const viewMatrix = mat4LookAt(camera.position, camera.target, [0, 1, 0]);
 
   const sunsetPhase = Math.sin(time * 0.00005) * 0.5 + 0.5;
   const sunIntensity = 0.65 + 0.35 * sunsetPhase;
@@ -120,14 +125,12 @@ function render(time) {
   };
 
   world.staticObjects.forEach(drawObject);
-  world.traffic.forEach(drawObject);
   drawObject(player);
 
   hud.update({
-    speed: Math.abs(player.speed) * 3.6,
-    rpm: Math.abs(player.speed) * 250,
-    turbo: Math.min(1, player.turbo / player.maxTurbo),
-    traffic: world.traffic.length,
+    speed: player.speed * 3.6,
+    stamina: player.stamina,
+    surface: player.surface,
     time: time / 1000,
   });
 
