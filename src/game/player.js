@@ -1,47 +1,4 @@
-import { Mesh } from '../engine/gl.js';
-import { createBox } from '../engine/geometry.js';
-import { composeTransform } from '../engine/math.js';
-
-function translatePositions(source, offset) {
-  const positions = [];
-  for (let i = 0; i < source.length; i += 3) {
-    positions.push(source[i] + offset[0], source[i + 1] + offset[1], source[i + 2] + offset[2]);
-  }
-  return positions;
-}
-
-function mergeGeometries(parts) {
-  const merged = { positions: [], normals: [], colors: [], indices: [] };
-  let vertexOffset = 0;
-
-  parts.forEach(({ geometry, offset = [0, 0, 0] }) => {
-    merged.positions.push(...translatePositions(geometry.positions, offset));
-    merged.normals.push(...geometry.normals);
-    merged.colors.push(...geometry.colors);
-    geometry.indices.forEach((index) => {
-      merged.indices.push(index + vertexOffset);
-    });
-    vertexOffset += geometry.positions.length / 3;
-  });
-
-  return merged;
-}
-
-const avatarCache = new Map();
-
-function getAvatarMesh(gl, { primaryColor, headColor }) {
-  const key = `${primaryColor.join('-')}:${headColor.join('-')}`;
-  if (!avatarCache.has(key)) {
-    const body = createBox({ width: 0.55, height: 1.2, depth: 0.4, color: primaryColor });
-    const head = createBox({ width: 0.4, height: 0.4, depth: 0.4, color: headColor });
-    const geometry = mergeGeometries([
-      { geometry: body, offset: [0, 0.6, 0] },
-      { geometry: head, offset: [0, 1.4, 0] },
-    ]);
-    avatarCache.set(key, new Mesh(gl, geometry));
-  }
-  return avatarCache.get(key);
-}
+import { THREE } from '../engine/three.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -89,24 +46,53 @@ function approach(current, target, delta) {
   return Math.max(current - delta, target);
 }
 
+function createAvatarMesh(primaryColor, headColor) {
+  const group = new THREE.Group();
+  group.name = 'PlayerAvatar';
+
+  const sharedMaterial = {
+    flatShading: true,
+    roughness: 0.65,
+    metalness: 0.05,
+  };
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 1.2, 0.4),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(...primaryColor), ...sharedMaterial })
+  );
+  body.position.y = 0.6;
+  body.castShadow = true;
+  group.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.4, 0.4),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(...headColor), ...sharedMaterial })
+  );
+  head.position.y = 1.4;
+  head.castShadow = true;
+  group.add(head);
+
+  return group;
+}
+
 export class PlayerAvatar {
-  constructor(gl, { color = [0.15, 0.7, 1], headColor = [1, 0.82, 0.68], collision } = {}) {
-    this.mesh = getAvatarMesh(gl, { primaryColor: color, headColor });
+  constructor(scene, { color = [0.15, 0.7, 1], headColor = [1, 0.82, 0.68], collision } = {}) {
+    this.object = createAvatarMesh(color, headColor);
+    scene.add(this.object);
+
     this.height = 1.8;
-    this.position = [0, this.height / 2, 0];
+    this.position = this.object.position;
+    this.position.set(0, this.height / 2, 0);
     this.rotation = 0;
-    this.scale = [1, 1, 1];
 
     this.walkSpeed = 2.9;
     this.sprintSpeed = 5.6;
     this.acceleration = 12;
     this.deceleration = 18;
-    this.turnSpeed = 0.0025;
 
     this.velocity = [0, 0, 0];
     this.speed = 0;
     this.yaw = 0;
-    this.pitch = -0.35;
     this.surface = 'pavimento';
 
     this.stamina = 1;
@@ -114,10 +100,6 @@ export class PlayerAvatar {
     this.staminaRecovery = 0.3;
 
     this.collision = collision;
-  }
-
-  modelMatrix() {
-    return composeTransform(this.position, this.yaw, this.scale);
   }
 
   sampleSurface(position) {
@@ -181,6 +163,7 @@ export class PlayerAvatar {
 
   update(dt, input, cameraYaw = 0) {
     if (!dt) return;
+
     const forward = [Math.sin(cameraYaw), 0, Math.cos(cameraYaw)];
     const right = [Math.sin(cameraYaw + Math.PI / 2), 0, Math.cos(cameraYaw + Math.PI / 2)];
 
@@ -209,9 +192,9 @@ export class PlayerAvatar {
     }
 
     const previewPosition = [
-      this.position[0] + move[0] * 0.5,
-      this.position[1],
-      this.position[2] + move[2] * 0.5,
+      this.position.x + move[0] * 0.5,
+      this.position.y,
+      this.position.z + move[2] * 0.5,
     ];
     const surface = this.sampleSurface(previewPosition);
 
@@ -224,21 +207,22 @@ export class PlayerAvatar {
     this.velocity[2] = approach(this.velocity[2], targetVelocity[2], rate * dt);
 
     const nextPosition = [
-      this.position[0] + this.velocity[0] * dt,
-      this.position[1],
-      this.position[2] + this.velocity[2] * dt,
+      this.position.x + this.velocity[0] * dt,
+      this.position.y,
+      this.position.z + this.velocity[2] * dt,
     ];
 
     const resolvedSurface = this.applyWorldConstraints(nextPosition);
-    this.position = nextPosition;
+    this.position.set(nextPosition[0], nextPosition[1], nextPosition[2]);
     this.surface = resolvedSurface.type;
+
     const horizontalSpeed = Math.hypot(this.velocity[0], this.velocity[2]);
     if (horizontalSpeed > 0.05) {
       this.yaw = Math.atan2(this.velocity[0], this.velocity[2]);
     }
-    this.rotation = this.yaw;
+    this.object.rotation.y = this.yaw;
 
-    const moving = Math.hypot(this.velocity[0], this.velocity[2]) > 0.1;
+    const moving = horizontalSpeed > 0.1;
     if (wantsToSprint && moving && surface.speedModifier > 0.5) {
       this.stamina = Math.max(0, this.stamina - this.staminaDrain * dt);
     } else {

@@ -1,7 +1,7 @@
 # GTA Style Engine Guidelines
-
-- Este projeto é escrito em JavaScript moderno (ES Modules). Sempre utilize `type="module"` ao importar scripts.
-- Todo o código deve ser executável diretamente no navegador, sem bundlers ou dependências externas.
+- Este projeto agora utiliza o Three.js via ES Modules (importado diretamente em `src/engine/three.js`). Mantenha essa abordagem sempre que precisar de recursos 3D.
+- Sempre utilize `type="module"` ao importar scripts.
+- Todo o código deve ser executável diretamente no navegador, sem bundlers ou etapas de build adicionais.
 - Utilize nomes autoexplicativos para classes e funções. Preferir composição ao invés de herança profunda.
 - Ao adicionar novos arquivos dentro de `src/`, mantenha a estrutura `engine/` para utilitários genéricos e `game/` para regras específicas do jogo.
 - Comentários devem explicar intenções e não apenas repetir o óbvio.
