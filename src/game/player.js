@@ -179,14 +179,10 @@ export class PlayerAvatar {
     return surface;
   }
 
-  update(dt, input) {
+  update(dt, input, cameraYaw = 0) {
     if (!dt) return;
-    const { dx, dy } = input.consumeMouse();
-    this.yaw -= dx * this.turnSpeed;
-    this.pitch = clamp(this.pitch - dy * this.turnSpeed, -1.2, 0.3);
-
-    const forward = [Math.sin(this.yaw), 0, Math.cos(this.yaw)];
-    const right = [Math.sin(this.yaw + Math.PI / 2), 0, Math.cos(this.yaw + Math.PI / 2)];
+    const forward = [Math.sin(cameraYaw), 0, Math.cos(cameraYaw)];
+    const right = [Math.sin(cameraYaw + Math.PI / 2), 0, Math.cos(cameraYaw + Math.PI / 2)];
 
     const move = [0, 0, 0];
     if (input.isDown('w')) {
@@ -236,6 +232,10 @@ export class PlayerAvatar {
     const resolvedSurface = this.applyWorldConstraints(nextPosition);
     this.position = nextPosition;
     this.surface = resolvedSurface.type;
+    const horizontalSpeed = Math.hypot(this.velocity[0], this.velocity[2]);
+    if (horizontalSpeed > 0.05) {
+      this.yaw = Math.atan2(this.velocity[0], this.velocity[2]);
+    }
     this.rotation = this.yaw;
 
     const moving = Math.hypot(this.velocity[0], this.velocity[2]) > 0.1;
@@ -245,6 +245,6 @@ export class PlayerAvatar {
       this.stamina = Math.min(1, this.stamina + this.staminaRecovery * dt);
     }
 
-    this.speed = Math.hypot(this.velocity[0], this.velocity[2]);
+    this.speed = horizontalSpeed;
   }
 }
