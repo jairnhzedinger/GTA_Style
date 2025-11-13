@@ -29,6 +29,17 @@ const camera = {
   position: [0, 10, 10],
 };
 
+const mixVec3 = (a, b, t) => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
+const normalizeVec3 = (vec) => {
+  const len = Math.hypot(vec[0], vec[1], vec[2]) || 1;
+  return [vec[0] / len, vec[1] / len, vec[2] / len];
+};
+
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight - 140;
@@ -69,16 +80,29 @@ function render(time) {
 
   const viewMatrix = mat4LookAt(camera.position, player.position, [0, 1, 0]);
 
-  gl.clearColor(0.02, 0.02, 0.05, 1);
+  const sunsetPhase = Math.sin(time * 0.00005) * 0.5 + 0.5;
+  const sunIntensity = 0.65 + 0.35 * sunsetPhase;
+  const lightColor = mixVec3([1.0, 0.6, 0.45], [1.0, 0.82, 0.6], sunsetPhase);
+  const ambientColor = mixVec3([0.09, 0.04, 0.06], [0.14, 0.06, 0.08], sunsetPhase);
+  const horizonColor = mixVec3([0.95, 0.45, 0.38], [0.8, 0.7, 0.6], sunsetPhase);
+  const fogColor = mixVec3([0.1, 0.22, 0.35], [0.04, 0.18, 0.28], sunsetPhase);
+  const lightDir = normalizeVec3([0.2, 0.25 + sunsetPhase * 0.25, 0.9]);
+  const clearColor = mixVec3([0.04, 0.18, 0.25], [0.08, 0.23, 0.32], sunsetPhase);
+
+  gl.clearColor(clearColor[0], clearColor[1], clearColor[2], 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   shader.use();
 
   gl.uniformMatrix4fv(shader.getUniformLocation('uProjection'), false, projectionMatrix);
   gl.uniformMatrix4fv(shader.getUniformLocation('uView'), false, viewMatrix);
-  gl.uniform3fv(shader.getUniformLocation('uLightDir'), new Float32Array([0.3, 1, 0.5]));
+  gl.uniform3fv(shader.getUniformLocation('uLightDir'), new Float32Array(lightDir));
+  gl.uniform3fv(shader.getUniformLocation('uLightColor'), new Float32Array(lightColor));
+  gl.uniform3fv(shader.getUniformLocation('uHorizonColor'), new Float32Array(horizonColor));
+  gl.uniform3fv(shader.getUniformLocation('uFogColor'), new Float32Array(fogColor));
+  gl.uniform1f(shader.getUniformLocation('uSunIntensity'), sunIntensity);
   gl.uniform3fv(
     shader.getUniformLocation('uAmbient'),
-    new Float32Array([0.04, 0.05, 0.08])
+    new Float32Array(ambientColor)
   );
   gl.uniform3fv(
     shader.getUniformLocation('uCameraPos'),

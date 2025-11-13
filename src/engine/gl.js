@@ -32,6 +32,10 @@ in vec3 vWorldPos;
 uniform vec3 uLightDir;
 uniform vec3 uCameraPos;
 uniform vec3 uAmbient;
+uniform vec3 uLightColor;
+uniform vec3 uHorizonColor;
+uniform vec3 uFogColor;
+uniform float uSunIntensity;
 
 out vec4 outColor;
 
@@ -40,9 +44,20 @@ void main() {
   float diff = max(dot(normal, -uLightDir), 0.0);
   vec3 viewDir = normalize(uCameraPos - vWorldPos);
   vec3 reflectDir = reflect(uLightDir, normal);
-  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 8.0);
-  vec3 lighting = vColor * diff + uAmbient + vec3(spec) * 0.25;
-  outColor = vec4(lighting, 1.0);
+  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 24.0) * uSunIntensity;
+
+  vec3 ambient = vColor * uAmbient;
+  vec3 diffuse = vColor * uLightColor * diff;
+  vec3 specular = uLightColor * spec;
+  vec3 lighting = ambient + diffuse + specular;
+
+  float distanceToCamera = length(uCameraPos - vWorldPos);
+  float fogFactor = clamp(1.0 - exp(-distanceToCamera * 0.035), 0.0, 0.9);
+  float heightMix = clamp((vWorldPos.y + 10.0) / 80.0, 0.0, 1.0);
+  vec3 fogColor = mix(uHorizonColor, uFogColor, heightMix);
+  vec3 finalColor = mix(lighting, fogColor, fogFactor);
+
+  outColor = vec4(finalColor, 1.0);
 }
 `;
 
