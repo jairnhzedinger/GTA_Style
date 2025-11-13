@@ -166,6 +166,7 @@ function render(time) {
       player.position.set(exitPosition.x, exitPosition.y, exitPosition.z);
       player.setVisible(true);
       activeVehicle.clearDriver();
+      activeVehicle.park(activeVehicle.position, activeVehicle.direction);
       activeVehicle = null;
     }
   }
