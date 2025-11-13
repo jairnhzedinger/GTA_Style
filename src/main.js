@@ -3,6 +3,8 @@ import { Input } from './game/input.js';
 import { PlayerAvatar } from './game/player.js';
 import { createWorld } from './game/world.js';
 import { HUD } from './game/hud.js';
+import { spawnVehicles } from './game/vehicles.js';
+import { spawnPedestrians } from './game/npcs.js';
 
 const canvas = document.getElementById('game');
 const hud = new HUD(document.getElementById('hud'));
@@ -29,6 +31,9 @@ const player = new PlayerAvatar(scene, {
   color: [0.2, 0.7, 1],
   collision: world.collision,
 });
+const vehicles = spawnVehicles(scene, world.collision);
+const pedestrians = spawnPedestrians(scene);
+let activeVehicle = null;
 
 const cameraRig = {
   distance: 5.6,
@@ -72,21 +77,26 @@ function applyCameraRotation(mouseDelta = { dx: 0, dy: 0 }) {
   );
 }
 
-function updateCamera(dt) {
+function updateCamera(dt, subject) {
   const smoothing = 1 - Math.exp(-dt / Math.max(cameraRig.response, 0.001));
-  const horizontalDistance = Math.cos(cameraRig.pitch) * cameraRig.distance;
+  const subjectSettings = subject?.cameraSettings || {};
+  const distance = subjectSettings.distance ?? cameraRig.distance;
+  const targetOffset = subjectSettings.targetOffset || cameraRig.targetOffset;
+  const verticalOffset = subjectSettings.verticalOffset ?? cameraRig.verticalOffset;
+  const followOffset = subjectSettings.followOffset || cameraRig.followOffset;
+  const horizontalDistance = Math.cos(cameraRig.pitch) * distance;
 
   cameraRig.desiredPosition.set(
-    player.position.x - Math.sin(cameraRig.yaw) * horizontalDistance + cameraRig.followOffset[0],
-    player.position.y + Math.sin(-cameraRig.pitch) * cameraRig.distance + cameraRig.verticalOffset + cameraRig.followOffset[1],
-    player.position.z - Math.cos(cameraRig.yaw) * horizontalDistance + cameraRig.followOffset[2]
+    subject.position.x - Math.sin(cameraRig.yaw) * horizontalDistance + followOffset[0],
+    subject.position.y + Math.sin(-cameraRig.pitch) * distance + verticalOffset + followOffset[1],
+    subject.position.z - Math.cos(cameraRig.yaw) * horizontalDistance + followOffset[2]
   );
 
   cameraRig.position.lerp(cameraRig.desiredPosition, smoothing);
   cameraRig.target.set(
-    player.position.x + cameraRig.targetOffset[0],
-    player.position.y + cameraRig.targetOffset[1],
-    player.position.z + cameraRig.targetOffset[2]
+    subject.position.x + targetOffset[0],
+    subject.position.y + targetOffset[1],
+    subject.position.z + targetOffset[2]
   );
 
   camera.position.copy(cameraRig.position);
@@ -121,18 +131,68 @@ function render(time) {
 
   const mouseDelta = input.consumeMouse();
   applyCameraRotation(mouseDelta);
-  player.update(dt, input, cameraRig.yaw);
-  updateCamera(dt);
+  let hint = '';
+
+  if (!activeVehicle) {
+    player.update(dt, input, cameraRig.yaw);
+    player.setVisible(true);
+
+    let closestVehicle = null;
+    let closestDistance = Infinity;
+    vehicles.forEach((vehicle) => {
+      const distance = vehicle.distanceTo(player.position);
+      if (distance < 2.6 && distance < closestDistance && vehicle.canEnter()) {
+        closestVehicle = vehicle;
+        closestDistance = distance;
+      }
+    });
+
+    if (closestVehicle) {
+      hint = 'Pressione ENTER para dirigir';
+      if (input.consumePress('enter')) {
+        activeVehicle = closestVehicle;
+        closestVehicle.setDriver();
+        player.setVisible(false);
+        player.syncWithVehicle(closestVehicle);
+      }
+    }
+  } else {
+    player.syncWithVehicle(activeVehicle);
+    player.speed = 0;
+    player.stamina = Math.min(1, player.stamina + player.staminaRecovery * dt);
+    hint = activeVehicle.canExit() ? 'Pressione ENTER para sair do veículo' : 'Reduza a velocidade para sair';
+    if (input.consumePress('enter') && activeVehicle.canExit()) {
+      const exitPosition = activeVehicle.getExitPosition();
+      player.position.set(exitPosition.x, exitPosition.y, exitPosition.z);
+      player.setVisible(true);
+      activeVehicle.clearDriver();
+      activeVehicle = null;
+    }
+  }
+
+  vehicles.forEach((vehicle) => {
+    const controlled = vehicle === activeVehicle;
+    vehicle.update(dt, input, controlled);
+  });
+  pedestrians.forEach((npc) => npc.update(dt));
+
+  const focusEntity = activeVehicle || player;
+  updateCamera(dt, focusEntity);
   applyEnvironmentLighting(time);
 
+  const currentSpeed = activeVehicle ? Math.abs(activeVehicle.speed) : player.speed;
+  const surfaceLabel = activeVehicle ? 'veículo' : player.surface;
+
   hud.update({
-    speed: player.speed * 3.6,
+    speed: currentSpeed * 3.6,
     stamina: player.stamina,
-    surface: player.surface,
+    surface: surfaceLabel,
     time: time / 1000,
+    hint,
   });
 
   renderer.render(scene, camera);
+  input.postFrame();
   requestAnimationFrame(render);
 }
 
