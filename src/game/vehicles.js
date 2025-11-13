@@ -104,9 +104,11 @@ export class Vehicle {
 
     this.navGraph = navGraph;
     this.autopilotSpeed = 6;
-    this.route = [];
+    this.routeNodes = [];
     this.routeIndex = 0;
     this.routeTarget = new THREE.Vector3();
+    this.laneOffset = 0;
+    this.destinationWait = 0;
 
     this.isPlayerControlled = false;
     this.wasPlayerDriven = false;
@@ -211,28 +213,112 @@ export class Vehicle {
   }
 
   ensureRoute() {
-    if (this.route.length && this.routeIndex < this.route.length) {
+    if (this.routeNodes.length > 1 && this.routeIndex < this.routeNodes.length - 1) {
       return;
     }
     if (!this.navGraph || !this.navGraph.nodes.length) {
-      this.route = [];
+      this.routeNodes = [];
       this.routeIndex = 0;
       return;
     }
-    const routeLength = 3 + Math.floor(Math.random() * 4);
-    const start = this.navGraph.nodes[Math.floor(Math.random() * this.navGraph.nodes.length)];
-    const chosen = [start];
-    let current = start;
-    while (chosen.length < routeLength) {
-      const neighbors = current.neighbors
-        .map((id) => this.navGraph.nodeMap.get(id))
-        .filter(Boolean);
-      if (!neighbors.length) break;
-      current = neighbors[Math.floor(Math.random() * neighbors.length)];
-      chosen.push(current);
+
+    const startNode = this.findClosestNavNode();
+    const endNode = this.pickDistantNavNode(startNode);
+    if (!startNode || !endNode || startNode.id === endNode.id) {
+      this.routeNodes = [];
+      this.routeIndex = 0;
+      return;
     }
-    this.route = chosen.map((node) => [node.position[0], 0, node.position[2]]);
+
+    const path = this.buildRouteBetween(startNode, endNode);
+    if (!path.length || path.length < 2) {
+      this.routeNodes = [];
+      this.routeIndex = 0;
+      return;
+    }
+
+    this.routeNodes = path;
     this.routeIndex = 0;
+    this.laneOffset = (Math.random() * 0.9 + 0.35) * (Math.random() < 0.5 ? -1 : 1);
+  }
+
+  findClosestNavNode() {
+    if (!this.navGraph || !this.navGraph.nodes.length) {
+      return null;
+    }
+    let closest = null;
+    let bestDistance = Infinity;
+    this.navGraph.nodes.forEach((node) => {
+      const dx = this.position.x - node.position[0];
+      const dz = this.position.z - node.position[2];
+      const manhattan = Math.abs(dx) + Math.abs(dz);
+      if (manhattan < bestDistance) {
+        bestDistance = manhattan;
+        closest = node;
+      }
+    });
+    return closest;
+  }
+
+  pickDistantNavNode(startNode) {
+    if (!startNode || !this.navGraph || !this.navGraph.nodes.length) {
+      return null;
+    }
+    let chosen = startNode;
+    let longest = -Infinity;
+    this.navGraph.nodes.forEach((node) => {
+      if (node.id === startNode.id) return;
+      const distance = Math.abs(node.xi - startNode.xi) + Math.abs(node.zi - startNode.zi);
+      if (distance > longest) {
+        longest = distance;
+        chosen = node;
+      }
+    });
+    return chosen;
+  }
+
+  buildRouteBetween(startNode, endNode) {
+    if (!startNode || !endNode || !this.navGraph) {
+      return [];
+    }
+    if (startNode.id === endNode.id) {
+      return [startNode];
+    }
+
+    const queue = [startNode];
+    const visited = new Set([startNode.id]);
+    const previous = new Map();
+    const { nodeMap } = this.navGraph;
+
+    while (queue.length) {
+      const node = queue.shift();
+      if (node.id === endNode.id) {
+        break;
+      }
+      node.neighbors.forEach((neighborId) => {
+        if (visited.has(neighborId)) return;
+        const neighborNode = nodeMap.get(neighborId);
+        if (!neighborNode) return;
+        visited.add(neighborId);
+        previous.set(neighborId, node.id);
+        queue.push(neighborNode);
+      });
+    }
+
+    if (!visited.has(endNode.id)) {
+      return [startNode];
+    }
+
+    const path = [];
+    let currentId = endNode.id;
+    while (currentId) {
+      const currentNode = nodeMap.get(currentId);
+      if (!currentNode) break;
+      path.push(currentNode);
+      currentId = previous.get(currentId);
+    }
+    path.reverse();
+    return path;
   }
 
   adjustSpeed(targetSpeed, dt) {
@@ -280,21 +366,47 @@ export class Vehicle {
       return;
     }
 
-    this.ensureRoute();
-    if (!this.route.length) {
-      this.speed = clamp(this.speed - this.damping * dt, 0, this.maxSpeed);
+    if (this.destinationWait > 0) {
+      this.destinationWait = Math.max(0, this.destinationWait - dt);
+      this.adjustSpeed(0, dt);
+      this.position.y = 0;
       return;
     }
 
-    const waypoint = this.route[this.routeIndex];
-    this.routeTarget.set(waypoint[0], 0, waypoint[2]);
+    this.ensureRoute();
+    if (!this.routeNodes.length || this.routeIndex >= this.routeNodes.length - 1) {
+      this.adjustSpeed(0, dt);
+      this.position.y = 0;
+      return;
+    }
+
+    const currentNode = this.routeNodes[this.routeIndex];
+    const nextNode = this.routeNodes[this.routeIndex + 1];
+    if (!nextNode) {
+      this.handleDestinationReached();
+      this.adjustSpeed(0, dt);
+      this.position.y = 0;
+      return;
+    }
+
+    const currentPos = new THREE.Vector3(currentNode.position[0], 0, currentNode.position[2]);
+    const nextPos = new THREE.Vector3(nextNode.position[0], 0, nextNode.position[2]);
+    const segmentVector = new THREE.Vector3().subVectors(nextPos, currentPos);
+    if (segmentVector.lengthSq() === 0) {
+      this.routeIndex += 1;
+      return;
+    }
+
+    const forwardOnSegment = segmentVector.clone().normalize();
+    const lateralDirection = new THREE.Vector3(forwardOnSegment.z, 0, -forwardOnSegment.x);
+    this.routeTarget.copy(nextPos).addScaledVector(lateralDirection, this.laneOffset);
+
     const direction = new THREE.Vector3().subVectors(this.routeTarget, this.position);
     const distance = direction.length();
-    if (distance < 1.4) {
+    if (distance < 1.1) {
       this.routeIndex += 1;
-      if (this.routeIndex >= this.route.length) {
-        this.route = [];
-        this.routeIndex = 0;
+      if (this.routeIndex >= this.routeNodes.length - 1) {
+        this.handleDestinationReached();
       }
       return;
     }
@@ -303,19 +415,39 @@ export class Vehicle {
     const desiredAngle = Math.atan2(direction.x, direction.z);
     let angleDelta = desiredAngle - this.direction;
     angleDelta = Math.atan2(Math.sin(angleDelta), Math.cos(angleDelta));
-    this.direction += angleDelta * 0.7 * dt;
+    this.direction += angleDelta * 0.9 * dt;
 
     const potentialCollision = this.detectPotentialCollision(context.obstacles || []);
     if (potentialCollision && this.honkCooldown <= 0) {
       this.triggerHonk();
     }
-    const desiredSpeed = potentialCollision ? Math.min(this.autopilotSpeed, 2) : this.autopilotSpeed;
+
+    const intersectionAhead = nextNode.neighbors.length > 2;
+    let desiredSpeed = this.autopilotSpeed;
+    if (intersectionAhead) {
+      if (distance < 2.2) {
+        desiredSpeed = 0;
+      } else if (distance < 5) {
+        desiredSpeed = Math.min(desiredSpeed, this.autopilotSpeed * 0.45);
+      }
+    }
+    if (potentialCollision) {
+      desiredSpeed = 0;
+    }
+
     this.adjustSpeed(desiredSpeed, dt);
 
     const forward = new THREE.Vector3(Math.sin(this.direction), 0, Math.cos(this.direction));
     this.position.x += forward.x * this.speed * dt;
     this.position.z += forward.z * this.speed * dt;
     this.position.y = 0;
+  }
+
+  handleDestinationReached() {
+    this.routeNodes = [];
+    this.routeIndex = 0;
+    this.destinationWait = 2.5 + Math.random() * 2.5;
+    this.speed = 0;
   }
 
   triggerHonk() {
