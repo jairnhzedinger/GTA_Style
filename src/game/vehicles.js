@@ -10,6 +10,8 @@ function createVehicleMesh({ color = [0.8, 0.12, 0.18] } = {}) {
       flatShading: true,
       roughness: 0.5,
       metalness: 0.2,
+      emissive: new THREE.Color(0, 0, 0),
+      emissiveIntensity: 0,
     })
   );
   chassis.position.y = 0.45;
@@ -42,13 +44,50 @@ function createVehicleMesh({ color = [0.8, 0.12, 0.18] } = {}) {
     group.add(wheel);
   });
 
+  group.userData = { chassisMaterial: chassis.material };
   return group;
 }
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const NAV_GRID_X = [-48, -24, 0, 24, 48];
+const NAV_GRID_Z = [12, 27, 42, 57, 72];
+
+function createRoadGraph() {
+  const nodes = [];
+  const nodeMap = new Map();
+  NAV_GRID_X.forEach((x, xi) => {
+    NAV_GRID_Z.forEach((z, zi) => {
+      const id = `n-${xi}-${zi}`;
+      const node = { id, position: [x, 0, z], neighbors: [], xi, zi };
+      nodes.push(node);
+      nodeMap.set(id, node);
+    });
+  });
+
+  nodes.forEach((node) => {
+    const { xi, zi } = node;
+    const neighborOffsets = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    neighborOffsets.forEach(([dx, dz]) => {
+      const nx = xi + dx;
+      const nz = zi + dz;
+      if (nx < 0 || nz < 0 || nx >= NAV_GRID_X.length || nz >= NAV_GRID_Z.length) return;
+      node.neighbors.push(`n-${nx}-${nz}`);
+    });
+  });
+
+  return { nodes, nodeMap };
+}
+
+const DEFAULT_NAV_GRAPH = createRoadGraph();
+
 export class Vehicle {
-  constructor(scene, { position = [0, 0, 0], color, worldBounds, autopilotPath = [] }) {
+  constructor(scene, { position = [0, 0, 0], color, worldBounds, navGraph = DEFAULT_NAV_GRAPH }) {
     this.mesh = createVehicleMesh({ color });
     scene.add(this.mesh);
     this.position = this.mesh.position;
@@ -63,15 +102,20 @@ export class Vehicle {
     this.damping = 6;
     this.worldBounds = worldBounds;
 
-    this.autopilotPath = autopilotPath;
-    this.currentWaypoint = 0;
+    this.navGraph = navGraph;
     this.autopilotSpeed = 6;
+    this.route = [];
+    this.routeIndex = 0;
+    this.routeTarget = new THREE.Vector3();
 
     this.isPlayerControlled = false;
     this.wasPlayerDriven = false;
     this.parked = false;
     this.parkedLocation = new THREE.Vector3(position[0], position[1], position[2]);
     this.parkedDirection = this.direction;
+
+    this.hornFlash = 0;
+    this.honkCooldown = 0;
 
     this.cameraSettings = {
       targetOffset: [0, 1.4, 0],
@@ -124,16 +168,17 @@ export class Vehicle {
     return new THREE.Vector3(this.position.x + offset.x, this.position.y, this.position.z + offset.z);
   }
 
-  update(dt, input, usePlayerInput = false) {
+  update(dt, input, usePlayerInput = false, context = {}) {
     if (usePlayerInput) {
       this.applyPlayerInput(dt, input);
     } else {
-      this.applyAutopilot(dt);
+      this.applyAutopilot(dt, context);
     }
 
     this.position.x = clamp(this.position.x, this.worldBounds.minX + 2, this.worldBounds.maxX - 2);
     this.position.z = clamp(this.position.z, this.worldBounds.minZ + 2, this.worldBounds.maxZ - 2);
     this.mesh.rotation.y = this.direction;
+    this.updateHornVisual(dt);
   }
 
   applyPlayerInput(dt, input) {
@@ -165,7 +210,60 @@ export class Vehicle {
     this.position.y = 0;
   }
 
-  applyAutopilot(dt) {
+  ensureRoute() {
+    if (this.route.length && this.routeIndex < this.route.length) {
+      return;
+    }
+    if (!this.navGraph || !this.navGraph.nodes.length) {
+      this.route = [];
+      this.routeIndex = 0;
+      return;
+    }
+    const routeLength = 3 + Math.floor(Math.random() * 4);
+    const start = this.navGraph.nodes[Math.floor(Math.random() * this.navGraph.nodes.length)];
+    const chosen = [start];
+    let current = start;
+    while (chosen.length < routeLength) {
+      const neighbors = current.neighbors
+        .map((id) => this.navGraph.nodeMap.get(id))
+        .filter(Boolean);
+      if (!neighbors.length) break;
+      current = neighbors[Math.floor(Math.random() * neighbors.length)];
+      chosen.push(current);
+    }
+    this.route = chosen.map((node) => [node.position[0], 0, node.position[2]]);
+    this.routeIndex = 0;
+  }
+
+  adjustSpeed(targetSpeed, dt) {
+    if (this.speed < targetSpeed) {
+      this.speed = Math.min(targetSpeed, this.speed + this.acceleration * dt);
+    } else if (this.speed > targetSpeed) {
+      this.speed = Math.max(targetSpeed, this.speed - this.brakeForce * dt);
+    }
+  }
+
+  detectPotentialCollision(obstacles = []) {
+    if (!obstacles.length) return null;
+    const forward = new THREE.Vector3(Math.sin(this.direction), 0, Math.cos(this.direction));
+    const lookAhead = 2.8 + Math.abs(this.speed) * 0.4;
+    const futurePoint = new THREE.Vector3(
+      this.position.x + forward.x * lookAhead,
+      0,
+      this.position.z + forward.z * lookAhead
+    );
+    for (const obstacle of obstacles) {
+      if (!obstacle || obstacle.entity === this) continue;
+      const radius = obstacle.radius || 1;
+      const distance = futurePoint.distanceTo(obstacle.position);
+      if (distance < radius + 0.8) {
+        return obstacle;
+      }
+    }
+    return null;
+  }
+
+  applyAutopilot(dt, context = {}) {
     if (this.parked) {
       const brake = this.brakeForce * dt;
       if (this.speed > 0) {
@@ -177,28 +275,65 @@ export class Vehicle {
       return;
     }
 
-    if (!this.autopilotPath.length || this.isPlayerControlled) {
+    if (this.isPlayerControlled) {
       this.speed = clamp(this.speed - this.damping * dt, 0, this.maxSpeed);
       return;
     }
 
-    const target = this.autopilotPath[this.currentWaypoint];
-    const direction = new THREE.Vector3(target[0] - this.position.x, 0, target[2] - this.position.z);
+    this.ensureRoute();
+    if (!this.route.length) {
+      this.speed = clamp(this.speed - this.damping * dt, 0, this.maxSpeed);
+      return;
+    }
+
+    const waypoint = this.route[this.routeIndex];
+    this.routeTarget.set(waypoint[0], 0, waypoint[2]);
+    const direction = new THREE.Vector3().subVectors(this.routeTarget, this.position);
     const distance = direction.length();
-    if (distance < 1.5) {
-      this.currentWaypoint = (this.currentWaypoint + 1) % this.autopilotPath.length;
+    if (distance < 1.4) {
+      this.routeIndex += 1;
+      if (this.routeIndex >= this.route.length) {
+        this.route = [];
+        this.routeIndex = 0;
+      }
       return;
     }
 
     direction.normalize();
     const desiredAngle = Math.atan2(direction.x, direction.z);
-    const angleDelta = desiredAngle - this.direction;
-    this.direction += angleDelta * 0.6 * dt;
+    let angleDelta = desiredAngle - this.direction;
+    angleDelta = Math.atan2(Math.sin(angleDelta), Math.cos(angleDelta));
+    this.direction += angleDelta * 0.7 * dt;
 
-    this.position.x += direction.x * this.autopilotSpeed * dt;
-    this.position.z += direction.z * this.autopilotSpeed * dt;
-    this.speed = this.autopilotSpeed;
+    const potentialCollision = this.detectPotentialCollision(context.obstacles || []);
+    if (potentialCollision && this.honkCooldown <= 0) {
+      this.triggerHonk();
+    }
+    const desiredSpeed = potentialCollision ? Math.min(this.autopilotSpeed, 2) : this.autopilotSpeed;
+    this.adjustSpeed(desiredSpeed, dt);
+
+    const forward = new THREE.Vector3(Math.sin(this.direction), 0, Math.cos(this.direction));
+    this.position.x += forward.x * this.speed * dt;
+    this.position.z += forward.z * this.speed * dt;
     this.position.y = 0;
+  }
+
+  triggerHonk() {
+    this.hornFlash = 0.45;
+    this.honkCooldown = 2.5;
+  }
+
+  updateHornVisual(dt) {
+    this.hornFlash = Math.max(0, this.hornFlash - dt);
+    this.honkCooldown = Math.max(0, this.honkCooldown - dt);
+    const chassisMaterial = this.mesh.userData?.chassisMaterial;
+    if (!chassisMaterial) return;
+    if (this.hornFlash > 0) {
+      const glow = 0.25 + 0.2 * Math.sin((0.45 - this.hornFlash) * 20);
+      chassisMaterial.emissive.setScalar(glow);
+    } else {
+      chassisMaterial.emissive.setScalar(0);
+    }
   }
 }
 
@@ -224,12 +359,7 @@ export function spawnVehicles(scene, collision) {
       position,
       color: vehiclePalettes[index % vehiclePalettes.length],
       worldBounds: bounds,
-      autopilotPath: [
-        [position[0], 0, position[2]],
-        [position[0], 0, position[2] + 10],
-        [position[0] + 6, 0, position[2] + 10],
-        [position[0] + 6, 0, position[2]],
-      ],
+      navGraph: DEFAULT_NAV_GRAPH,
     })
   );
 }

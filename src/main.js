@@ -32,8 +32,10 @@ const player = new PlayerAvatar(scene, {
   collision: world.collision,
 });
 const vehicles = spawnVehicles(scene, world.collision);
-const pedestrians = spawnPedestrians(scene);
+const pedestrians = spawnPedestrians(scene, world.collision);
 let activeVehicle = null;
+let lastAttackTime = -10;
+const ATTACK_MEMORY = 1.5;
 
 const cameraRig = {
   distance: 5.6,
@@ -131,7 +133,14 @@ function render(time) {
 
   const mouseDelta = input.consumeMouse();
   applyCameraRotation(mouseDelta);
+  const nowSeconds = time / 1000;
   let hint = '';
+  if (!activeVehicle) {
+    hint = 'Pressione Q para cutucar pedestres';
+  }
+  if (input.consumePress('q')) {
+    lastAttackTime = nowSeconds;
+  }
 
   if (!activeVehicle) {
     player.update(dt, input, cameraRig.yaw);
@@ -171,11 +180,45 @@ function render(time) {
     }
   }
 
+  const playerObstacle = {
+    position: player.position,
+    radius: activeVehicle ? 2.4 : 1.1,
+    entity: player,
+    type: 'player',
+  };
+  const vehicleObstacles = vehicles.map((vehicle) => ({
+    position: vehicle.position,
+    radius: 2,
+    entity: vehicle,
+    type: 'vehicle',
+  }));
+  const pedestrianObstacles = pedestrians.map((npc) => ({
+    position: npc.position,
+    radius: 0.7,
+    entity: npc,
+    type: 'npc',
+  }));
+  const sharedObstacles = [playerObstacle, ...vehicleObstacles];
+
+  pedestrians.forEach((npc) =>
+    npc.update(dt, {
+      player,
+      playerAggressive: nowSeconds - lastAttackTime < ATTACK_MEMORY,
+      obstacles: [...sharedObstacles, ...pedestrianObstacles],
+    })
+  );
+
+  const awarenessObstacles = [playerObstacle, ...pedestrians.map((npc) => ({
+    position: npc.position,
+    radius: 0.7,
+    entity: npc,
+    type: 'npc',
+  })), ...vehicleObstacles];
+
   vehicles.forEach((vehicle) => {
     const controlled = vehicle === activeVehicle;
-    vehicle.update(dt, input, controlled);
+    vehicle.update(dt, input, controlled, { obstacles: awarenessObstacles });
   });
-  pedestrians.forEach((npc) => npc.update(dt));
 
   const focusEntity = activeVehicle || player;
   updateCamera(dt, focusEntity);
