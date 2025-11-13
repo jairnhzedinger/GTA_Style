@@ -1,101 +1,100 @@
-import { Mesh } from '../engine/gl.js';
-import { createBox } from '../engine/geometry.js';
-import { composeTransform } from '../engine/math.js';
-
-class StaticObject {
-  constructor(gl, geometry, position, scale = [1, 1, 1]) {
-    this.mesh = new Mesh(gl, geometry);
-    this.position = position;
-    this.rotation = 0;
-    this.scale = scale;
-  }
-
-  modelMatrix() {
-    return composeTransform(this.position, this.rotation, this.scale);
-  }
-}
+import { THREE } from '../engine/three.js';
 
 function randomRange(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function createBuilding(gl, x, z) {
-  const height = randomRange(3, 12);
-  const width = randomRange(3, 6);
-  const depth = randomRange(3, 6);
-  const color = [randomRange(0.2, 0.6), randomRange(0.2, 0.5), randomRange(0.2, 0.6)];
-  const geometry = createBox({ width, height, depth, color });
-  const building = new StaticObject(gl, geometry, [x, height / 2, z]);
-  const padding = 0.6;
-  building.collider = {
-    minX: x - width / 2 - padding,
-    maxX: x + width / 2 + padding,
-    minZ: z - depth / 2 - padding,
-    maxZ: z + depth / 2 + padding,
-    padding: 0.02,
-  };
-  return building;
+function colorFromArray(color) {
+  return new THREE.Color(color[0], color[1], color[2]);
 }
 
-function createRoad(gl, width, depth, position) {
-  const geometry = createBox({ width, height: 0.1, depth, color: [0.15, 0.15, 0.15] });
-  return new StaticObject(gl, geometry, position);
+function createBoxMesh({ width, height, depth, color, position, castShadow = false, receiveShadow = true }) {
+  const geometry = new THREE.BoxGeometry(width, height, depth);
+  const material = new THREE.MeshStandardMaterial({
+    color: colorFromArray(color),
+    flatShading: true,
+    roughness: 0.8,
+    metalness: 0.05,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = receiveShadow;
+  return mesh;
 }
 
-function createPlane(gl, width, depth, position, color, height = 0.2) {
-  const geometry = createBox({ width, height, depth, color });
-  return new StaticObject(gl, geometry, position);
-}
+function createPalmTree(position) {
+  const group = new THREE.Group();
 
-function createPalmTree(gl, position) {
-  const objects = [];
-  const trunk = new StaticObject(
-    gl,
-    createBox({ width: 0.6, height: 5.2, depth: 0.6, color: [0.4, 0.23, 0.08] }),
-    [position[0], position[1] + 2.6, position[2]]
-  );
-  objects.push(trunk);
+  const trunk = createBoxMesh({
+    width: 0.6,
+    height: 5.2,
+    depth: 0.6,
+    color: [0.4, 0.23, 0.08],
+    position: [position[0], position[1] + 2.6, position[2]],
+    castShadow: true,
+  });
+  group.add(trunk);
 
-  const leafGeometry = createBox({ width: 0.5, height: 0.15, depth: 3.6, color: [0.08, 0.8, 0.42] });
+  const leafGeometry = new THREE.BoxGeometry(0.5, 0.15, 3.6);
+  const leafMaterial = new THREE.MeshStandardMaterial({
+    color: colorFromArray([0.08, 0.8, 0.42]),
+    flatShading: true,
+    roughness: 0.65,
+    metalness: 0.05,
+  });
   const leafAngles = [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4];
   leafAngles.forEach((angle) => {
-    const leaf = new StaticObject(gl, leafGeometry, [position[0], position[1] + 5.2, position[2]]);
-    leaf.rotation = angle;
-    objects.push(leaf);
+    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+    leaf.position.set(position[0], position[1] + 5.2, position[2]);
+    leaf.rotation.y = angle;
+    leaf.castShadow = false;
+    leaf.receiveShadow = false;
+    group.add(leaf);
   });
 
-  return objects;
+  return group;
 }
 
-function createBeachDeck(gl, position, size) {
-  return createPlane(gl, size[0], size[1], position, [0.72, 0.58, 0.4], 0.25);
+function createUmbrella(position, colors) {
+  const group = new THREE.Group();
+
+  const pole = createBoxMesh({
+    width: 0.2,
+    height: 2.6,
+    depth: 0.2,
+    color: colors.pole || [0.75, 0.73, 0.7],
+    position: [position[0], position[1] + 1.3, position[2]],
+  });
+  group.add(pole);
+
+  const canopy = createBoxMesh({
+    width: 2.4,
+    height: 0.4,
+    depth: 2.4,
+    color: colors.canopy,
+    position: [position[0], position[1] + 2.2, position[2]],
+  });
+  canopy.scale.set(1, 0.7, 1);
+  group.add(canopy);
+
+  return group;
 }
 
-function createPier(gl, position, size) {
-  return createPlane(gl, size[0], size[1], position, [0.32, 0.26, 0.19], 0.3);
+function createWorldPlane(options) {
+  return createBoxMesh(options);
 }
 
-function createUmbrella(gl, position, colors) {
-  const objects = [];
-  const pole = new StaticObject(
-    gl,
-    createBox({ width: 0.2, height: 2.6, depth: 0.2, color: colors.pole || [0.75, 0.73, 0.7] }),
-    [position[0], position[1] + 1.3, position[2]]
-  );
-  objects.push(pole);
-
-  const canopy = new StaticObject(
-    gl,
-    createBox({ width: 2.4, height: 0.4, depth: 2.4, color: colors.canopy }),
-    [position[0], position[1] + 2.2, position[2]]
-  );
-  canopy.scale = [1, 0.7, 1];
-  objects.push(canopy);
-  return objects;
+function addObject(group, object) {
+  group.add(object);
+  return object;
 }
 
-export function createWorld(gl) {
-  const staticObjects = [];
+export function createWorld(scene) {
+  const group = new THREE.Group();
+  group.name = 'World';
+  scene.add(group);
+
   const collision = {
     worldBounds: { minX: -70, maxX: 70, minZ: -45, maxZ: 90 },
     restrictedZones: [
@@ -105,16 +104,25 @@ export function createWorld(gl) {
     solidZones: [],
   };
 
-  staticObjects.push(createPlane(gl, 200, 200, [0, -0.32, -110], [0.08, 0.28, 0.52], 0.2));
-  staticObjects.push(createPlane(gl, 160, 40, [0, -0.18, -20], [0.92, 0.79, 0.45], 0.25));
-  staticObjects.push(createPlane(gl, 180, 6, [0, -0.12, -4], [0.65, 0.55, 0.42], 0.2));
+  addObject(
+    group,
+    createWorldPlane({ width: 200, height: 0.2, depth: 200, color: [0.08, 0.28, 0.52], position: [0, -0.32, -110], receiveShadow: true })
+  );
+  addObject(
+    group,
+    createWorldPlane({ width: 160, height: 0.25, depth: 40, color: [0.92, 0.79, 0.45], position: [0, -0.18, -20], receiveShadow: true })
+  );
+  addObject(
+    group,
+    createWorldPlane({ width: 180, height: 0.2, depth: 6, color: [0.65, 0.55, 0.42], position: [0, -0.12, -4], receiveShadow: true })
+  );
 
   const decks = [
-    createBeachDeck(gl, [-25, -0.1, -12], [18, 8]),
-    createBeachDeck(gl, [25, -0.1, -10], [14, 7]),
+    createWorldPlane({ width: 18, height: 0.25, depth: 8, color: [0.72, 0.58, 0.4], position: [-25, -0.1, -12] }),
+    createWorldPlane({ width: 14, height: 0.25, depth: 7, color: [0.72, 0.58, 0.4], position: [25, -0.1, -10] }),
   ];
-  decks.forEach((deck) => staticObjects.push(deck));
-  staticObjects.push(createPier(gl, [0, -0.12, -30], [6, 50]));
+  decks.forEach((deck) => addObject(group, deck));
+  addObject(group, createWorldPlane({ width: 6, height: 0.3, depth: 50, color: [0.32, 0.26, 0.19], position: [0, -0.12, -30] }));
 
   const umbrellaColors = [
     { canopy: [0.95, 0.35, 0.4] },
@@ -122,58 +130,67 @@ export function createWorld(gl) {
     { canopy: [0.95, 0.8, 0.32] },
     { canopy: [0.7, 0.35, 0.9] },
   ];
-  const umbrellaPositions = [];
+  let umbrellaIndex = 0;
   for (let x = -50; x <= 50; x += 12) {
-    umbrellaPositions.push([x + randomRange(-2, 2), 0, -18 + randomRange(-3, 2)]);
+    const position = [x + randomRange(-2, 2), 0, -18 + randomRange(-3, 2)];
+    const set = umbrellaColors[umbrellaIndex % umbrellaColors.length];
+    addObject(group, createUmbrella(position, set));
+    umbrellaIndex += 1;
   }
-  umbrellaPositions.forEach((pos, idx) => {
-    const set = umbrellaColors[idx % umbrellaColors.length];
-    createUmbrella(gl, pos, set).forEach((obj) => staticObjects.push(obj));
-  });
 
-  const shorelinePalms = [];
   for (let x = -60; x <= 60; x += 12) {
-    shorelinePalms.push([x + randomRange(-1, 1), 0, -25 + randomRange(-3, 3)]);
+    const position = [x + randomRange(-1, 1), 0, -25 + randomRange(-3, 3)];
+    addObject(group, createPalmTree(position));
   }
-  shorelinePalms.forEach((pos) => {
-    createPalmTree(gl, pos).forEach((obj) => staticObjects.push(obj));
-  });
 
   const parks = [
-    createPlane(gl, 26, 18, [-28, -0.12, 28], [0.16, 0.42, 0.2], 0.22),
-    createPlane(gl, 28, 20, [32, -0.12, 46], [0.14, 0.38, 0.22], 0.22),
+    createWorldPlane({ width: 26, height: 0.22, depth: 18, color: [0.16, 0.42, 0.2], position: [-28, -0.12, 28] }),
+    createWorldPlane({ width: 28, height: 0.22, depth: 20, color: [0.14, 0.38, 0.22], position: [32, -0.12, 46] }),
   ];
-  parks.forEach((park) => staticObjects.push(park));
+  parks.forEach((park) => addObject(group, park));
 
-  const parkPalmPositions = [
+  const parkPalms = [
     [-30, 0, 30],
     [-22, 0, 26],
     [30, 0, 44],
     [35, 0, 50],
   ];
-  parkPalmPositions.forEach((pos) => {
-    createPalmTree(gl, pos).forEach((obj) => staticObjects.push(obj));
-  });
+  parkPalms.forEach((pos) => addObject(group, createPalmTree(pos)));
 
   for (let z = 12; z <= 84; z += 15) {
-    staticObjects.push(createRoad(gl, 170, 4, [0, -0.04, z]));
+    addObject(group, createWorldPlane({ width: 170, height: 0.12, depth: 4, color: [0.15, 0.15, 0.15], position: [0, -0.04, z] }));
   }
   for (let x = -48; x <= 48; x += 12) {
-    staticObjects.push(createRoad(gl, 4, 120, [x, -0.04, 55]));
+    addObject(group, createWorldPlane({ width: 4, height: 0.12, depth: 120, color: [0.16, 0.16, 0.16], position: [x, -0.04, 55] }));
   }
 
   for (let x = -48; x <= 48; x += 12) {
     for (let z = 14; z <= 86; z += 12) {
       if (z < 20 && Math.abs(x) < 35) continue;
       if (Math.abs(x) < 8 && z > 32 && z < 70) continue;
-      const building = createBuilding(gl, x + randomRange(-1.5, 1.5), z + randomRange(-1.5, 1.5));
-      staticObjects.push(building);
-      collision.solidZones.push(building.collider);
+      const width = randomRange(3, 6);
+      const depth = randomRange(3, 6);
+      const height = randomRange(3, 12);
+      const color = [randomRange(0.2, 0.6), randomRange(0.2, 0.5), randomRange(0.2, 0.6)];
+      const building = createBoxMesh({
+        width,
+        height,
+        depth,
+        color,
+        position: [x + randomRange(-1.5, 1.5), height / 2, z + randomRange(-1.5, 1.5)],
+        castShadow: true,
+      });
+      addObject(group, building);
+      const padding = 0.6;
+      collision.solidZones.push({
+        minX: building.position.x - width / 2 - padding,
+        maxX: building.position.x + width / 2 + padding,
+        minZ: building.position.z - depth / 2 - padding,
+        maxZ: building.position.z + depth / 2 + padding,
+        padding: 0.02,
+      });
     }
   }
 
-  return {
-    staticObjects,
-    collision,
-  };
+  return { group, collision };
 }
