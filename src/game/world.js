@@ -21,6 +21,9 @@ function loadPatternTexture(svgContent, repeatX, repeatY, colorSpace) {
 
 const flatNormalSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#8080ff"/></svg>`;
 
+const VERTICAL_ROAD = { start: -48, end: 48, spacing: 12, width: 4 };
+const HORIZONTAL_ROAD = { start: 12, end: 84, spacing: 15, width: 4 };
+
 const texturedSurfaces = {
   sand: {
     map: loadPatternTexture(
@@ -241,6 +244,14 @@ const buildingThemes = [
 
 function randomRange(min, max) {
   return Math.random() * (max - min) + min;
+}
+
+function createLotCenters({ start, end, spacing }) {
+  const centers = [];
+  for (let position = start; position + spacing <= end; position += spacing) {
+    centers.push(position + spacing / 2);
+  }
+  return centers;
 }
 
 function colorFromArray(color) {
@@ -776,24 +787,32 @@ export function createWorld(scene) {
   ];
   benchPositions.forEach((pos) => addObject(group, createBench(pos)));
 
-  for (let z = 12; z <= 84; z += 15) {
-    addRoadSegment(group, { width: 170, depth: 4, position: [0, -0.04, z], orientation: 'horizontal' });
+  for (let z = HORIZONTAL_ROAD.start; z <= HORIZONTAL_ROAD.end; z += HORIZONTAL_ROAD.spacing) {
+    addRoadSegment(group, { width: 170, depth: HORIZONTAL_ROAD.width, position: [0, -0.04, z], orientation: 'horizontal' });
   }
-  for (let x = -48; x <= 48; x += 12) {
-    addRoadSegment(group, { width: 4, depth: 120, position: [x, -0.04, 55], orientation: 'vertical' });
+  for (let x = VERTICAL_ROAD.start; x <= VERTICAL_ROAD.end; x += VERTICAL_ROAD.spacing) {
+    addRoadSegment(group, { width: VERTICAL_ROAD.width, depth: 120, position: [x, -0.04, 55], orientation: 'vertical' });
   }
 
-  for (let x = -48; x <= 48; x += 12) {
-    for (let z = 14; z <= 86; z += 12) {
-      if (z < 20 && Math.abs(x) < 35) continue;
-      if (Math.abs(x) < 8 && z > 32 && z < 70) continue;
+  const lotCentersX = createLotCenters(VERTICAL_ROAD);
+  const lotCentersZ = createLotCenters(HORIZONTAL_ROAD);
+  const lotHalfWidth = (VERTICAL_ROAD.spacing - VERTICAL_ROAD.width) / 2;
+  const lotHalfDepth = (HORIZONTAL_ROAD.spacing - HORIZONTAL_ROAD.width) / 2;
+  const lotMargin = 0.3;
+
+  for (const lotX of lotCentersX) {
+    for (const lotZ of lotCentersZ) {
+      if (lotZ < 20 && Math.abs(lotX) < 35) continue;
+      if (Math.abs(lotX) < 8 && lotZ > 32 && lotZ < 70) continue;
       const width = randomRange(3, 6);
       const depth = randomRange(3, 6);
       const height = randomRange(3, 12);
       const theme = buildingThemes[Math.floor(Math.random() * buildingThemes.length)];
       const surface = getSurfaceMaterial(theme.surface);
-      const centerX = x + randomRange(-1.5, 1.5);
-      const centerZ = z + randomRange(-1.5, 1.5);
+      const maxOffsetX = Math.max(lotHalfWidth - width / 2 - lotMargin, 0);
+      const maxOffsetZ = Math.max(lotHalfDepth - depth / 2 - lotMargin, 0);
+      const centerX = lotX + randomRange(-maxOffsetX, maxOffsetX);
+      const centerZ = lotZ + randomRange(-maxOffsetZ, maxOffsetZ);
       const building = createBoxMesh({
         width,
         height,
