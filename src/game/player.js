@@ -39,6 +39,13 @@ export class PlayerCar extends Car {
     super(gl, options);
     this.turbo = 0;
     this.maxTurbo = 3;
+    this.bounds =
+      options.bounds || {
+        minX: -50,
+        maxX: 50,
+        minZ: -50,
+        maxZ: 50,
+      };
   }
 
   update(dt, input) {
@@ -80,9 +87,48 @@ export class PlayerCar extends Car {
     this.position[0] += direction[0] * this.speed * dt;
     this.position[2] += direction[2] * this.speed * dt;
 
-    // Limites simples da cidade
-    this.position[0] = Math.max(-50, Math.min(50, this.position[0]));
-    this.position[2] = Math.max(-50, Math.min(50, this.position[2]));
+    this.applyWorldBounds();
+  }
+
+  applyWorldBounds() {
+    if (!this.bounds) return;
+    this.position[0] = Math.max(this.bounds.minX, Math.min(this.bounds.maxX, this.position[0]));
+    this.position[2] = Math.max(this.bounds.minZ, Math.min(this.bounds.maxZ, this.position[2]));
+  }
+}
+
+export class PlayerAvatar extends PlayerCar {
+  constructor(gl, options = {}) {
+    super(gl, options);
+    this.collision = options.collision;
+    this.onSand = false;
+  }
+
+  applyWorldBounds() {
+    super.applyWorldBounds();
+    if (!this.collision) return;
+
+    const { restrictedZones = [], sandZones = [] } = this.collision;
+    restrictedZones.forEach((zone) => {
+      if (this.isInsideZone(zone)) {
+        this.position[2] = zone.maxZ;
+        if (this.speed > 0) this.speed = 0;
+      }
+    });
+
+    this.onSand = sandZones.some((zone) => this.isInsideZone(zone));
+    if (this.onSand && this.speed > this.maxSpeed * 0.6) {
+      this.speed = this.maxSpeed * 0.6;
+    }
+  }
+
+  isInsideZone(zone) {
+    return (
+      this.position[0] >= zone.minX &&
+      this.position[0] <= zone.maxX &&
+      this.position[2] >= zone.minZ &&
+      this.position[2] <= zone.maxZ
+    );
   }
 }
 

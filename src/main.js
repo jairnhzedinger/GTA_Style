@@ -1,7 +1,7 @@
 import { ShaderProgram } from './engine/gl.js';
 import { mat4Perspective, mat4LookAt } from './engine/math.js';
 import { Input } from './game/input.js';
-import { PlayerCar } from './game/player.js';
+import { PlayerAvatar } from './game/player.js';
 import { createWorld } from './game/world.js';
 import { HUD } from './game/hud.js';
 
@@ -18,7 +18,11 @@ gl.enable(gl.DEPTH_TEST);
 const shader = new ShaderProgram(gl);
 const input = new Input(canvas);
 const world = createWorld(gl);
-const player = new PlayerCar(gl, { color: [0.2, 0.7, 1] });
+const player = new PlayerAvatar(gl, {
+  color: [0.2, 0.7, 1],
+  collision: world.collision,
+  bounds: world.collision.worldBounds,
+});
 
 let projectionMatrix = mat4Perspective(Math.PI / 4, 1, 0.1, 200);
 let lastTime = 0;
