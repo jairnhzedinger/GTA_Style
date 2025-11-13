@@ -80,9 +80,9 @@ export class PlayerAvatar {
     this.object = createAvatarMesh(color, headColor);
     scene.add(this.object);
 
-    this.height = 1.8;
+    this.height = 1.6;
     this.position = this.object.position;
-    this.position.set(0, this.height / 2, 0);
+    this.position.set(0, 0, 0);
     this.rotation = 0;
 
     this.walkSpeed = 2.9;
@@ -100,6 +100,23 @@ export class PlayerAvatar {
     this.staminaRecovery = 0.3;
 
     this.collision = collision;
+    this.visible = true;
+    this.cameraSettings = {
+      targetOffset: [0, 1.35, 0],
+      followOffset: [0, 0.2, 0],
+      verticalOffset: 0.5,
+      distance: 5.8,
+    };
+  }
+
+  setVisible(visible) {
+    this.visible = visible;
+    this.object.visible = visible;
+  }
+
+  syncWithVehicle(vehicle) {
+    if (!vehicle) return;
+    this.position.set(vehicle.position.x, vehicle.position.y, vehicle.position.z);
   }
 
   sampleSurface(position) {
@@ -157,7 +174,7 @@ export class PlayerAvatar {
     });
 
     const surface = this.sampleSurface(position);
-    position[1] = surface.groundHeight + this.height / 2;
+    position[1] = surface.groundHeight;
     return surface;
   }
 
@@ -177,12 +194,12 @@ export class PlayerAvatar {
       move[2] -= forward[2];
     }
     if (input.isDown('d')) {
-      move[0] += right[0];
-      move[2] += right[2];
-    }
-    if (input.isDown('a')) {
       move[0] -= right[0];
       move[2] -= right[2];
+    }
+    if (input.isDown('a')) {
+      move[0] += right[0];
+      move[2] += right[2];
     }
 
     const moveLength = Math.hypot(move[0], move[2]);
