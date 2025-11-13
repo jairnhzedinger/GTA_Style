@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GTA Style WebGL</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #050505;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        text-align: center;
+        padding: 0.8rem;
+        background: #141414;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      canvas {
+        flex: 1;
+        width: 100%;
+        display: block;
+        background: #060606;
+      }
+      #hud {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        padding: 0.8rem 1rem;
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 0.5rem;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        pointer-events: none;
+        min-width: 220px;
+      }
+      #hud strong {
+        color: #45ffad;
+      }
+      footer {
+        text-align: center;
+        padding: 0.5rem;
+        font-size: 0.8rem;
+        background: #0b0b0b;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GTA Style - WebGL Sandbox</h1>
+    </header>
+    <canvas id="game"></canvas>
+    <div id="hud"></div>
+    <footer>
+      Use W A S D para dirigir, Shift para turbo, Espaço para frear. Mouse para girar a câmera.
+    </footer>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
