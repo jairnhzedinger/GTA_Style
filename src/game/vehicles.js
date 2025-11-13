@@ -68,6 +68,10 @@ export class Vehicle {
     this.autopilotSpeed = 6;
 
     this.isPlayerControlled = false;
+    this.wasPlayerDriven = false;
+    this.parked = false;
+    this.parkedLocation = new THREE.Vector3(position[0], position[1], position[2]);
+    this.parkedDirection = this.direction;
 
     this.cameraSettings = {
       targetOffset: [0, 1.4, 0],
@@ -83,10 +87,27 @@ export class Vehicle {
 
   setDriver() {
     this.isPlayerControlled = true;
+    this.wasPlayerDriven = true;
+    this.parked = false;
   }
 
   clearDriver() {
     this.isPlayerControlled = false;
+  }
+
+  park(position = this.position, direction = this.direction) {
+    const parsedPosition = Array.isArray(position)
+      ? { x: position[0], y: position[1], z: position[2] }
+      : position;
+    if (parsedPosition) {
+      this.position.set(parsedPosition.x, parsedPosition.y, parsedPosition.z);
+      this.parkedLocation.copy(this.position);
+    }
+    this.direction = direction ?? this.direction;
+    this.parkedDirection = this.direction;
+    this.speed = 0;
+    this.parked = true;
+    this.wasPlayerDriven = true;
   }
 
   canEnter() {
@@ -145,6 +166,17 @@ export class Vehicle {
   }
 
   applyAutopilot(dt) {
+    if (this.parked) {
+      const brake = this.brakeForce * dt;
+      if (this.speed > 0) {
+        this.speed = Math.max(0, this.speed - brake);
+      } else {
+        this.speed = Math.min(0, this.speed + brake);
+      }
+      this.position.y = 0;
+      return;
+    }
+
     if (!this.autopilotPath.length || this.isPlayerControlled) {
       this.speed = clamp(this.speed - this.damping * dt, 0, this.maxSpeed);
       return;
