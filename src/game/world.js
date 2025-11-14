@@ -21,8 +21,8 @@ function loadPatternTexture(svgContent, repeatX, repeatY, colorSpace) {
 
 const flatNormalSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#8080ff"/></svg>`;
 
-const VERTICAL_ROAD = { start: -48, end: 48, spacing: 12, width: 4 };
-const HORIZONTAL_ROAD = { start: 12, end: 84, spacing: 15, width: 4 };
+const VERTICAL_ROAD = { start: -72, end: 72, spacing: 12, width: 4 };
+const HORIZONTAL_ROAD = { start: 12, end: 108, spacing: 15, width: 4 };
 
 const texturedSurfaces = {
   sand: {
@@ -631,11 +631,11 @@ export function createWorld(scene) {
   scene.add(group);
 
   const collision = {
-    worldBounds: { minX: -70, maxX: 70, minZ: -45, maxZ: 90 },
+    worldBounds: { minX: -90, maxX: 90, minZ: -45, maxZ: 125 },
     restrictedZones: [
-      { minX: -90, maxX: 90, minZ: -210, maxZ: -35, type: 'água', groundHeight: -0.25, speedModifier: 0 },
+      { minX: -110, maxX: 110, minZ: -210, maxZ: -35, type: 'água', groundHeight: -0.25, speedModifier: 0 },
     ],
-    sandZones: [{ minX: -80, maxX: 80, minZ: -35, maxZ: -5, groundHeight: -0.05, speedModifier: 0.65 }],
+    sandZones: [{ minX: -100, maxX: 100, minZ: -35, maxZ: -5, groundHeight: -0.05, speedModifier: 0.65 }],
     solidZones: [],
   };
 
@@ -741,31 +741,30 @@ export function createWorld(scene) {
 
   const grassSurface = getSurfaceMaterial('grass');
   const parks = [
-    createWorldPlane({
-      width: 26,
-      height: 0.22,
-      depth: 18,
-      color: [0.16, 0.42, 0.2],
-      position: [-28, -0.12, 28],
-      map: grassSurface.map,
-      normalMap: grassSurface.normalMap,
-      flatShading: false,
-    }),
-    (() => {
-      const parkSurface = getSurfaceMaterial('grass');
-      return createWorldPlane({
-        width: 28,
-        height: 0.22,
-        depth: 20,
-        color: [0.14, 0.38, 0.22],
-        position: [32, -0.12, 46],
-        map: parkSurface.map,
-        normalMap: parkSurface.normalMap,
-        flatShading: false,
-      });
-    })(),
+    { width: 26, depth: 18, color: [0.16, 0.42, 0.2], position: [-28, -0.12, 28] },
+    { width: 28, depth: 20, color: [0.14, 0.38, 0.22], position: [32, -0.12, 46] },
   ];
-  parks.forEach((park) => addObject(group, park));
+  parks.forEach((park) =>
+    addObject(
+      group,
+      createWorldPlane({
+        width: park.width,
+        height: 0.22,
+        depth: park.depth,
+        color: park.color,
+        position: park.position,
+        map: grassSurface.map,
+        normalMap: grassSurface.normalMap,
+        flatShading: false,
+      })
+    )
+  );
+  const parkZones = parks.map((park) => ({
+    minX: park.position[0] - park.width / 2,
+    maxX: park.position[0] + park.width / 2,
+    minZ: park.position[2] - park.depth / 2,
+    maxZ: park.position[2] + park.depth / 2,
+  }));
 
   const parkPalms = [
     [-30, 0, 30],
@@ -787,32 +786,56 @@ export function createWorld(scene) {
   ];
   benchPositions.forEach((pos) => addObject(group, createBench(pos)));
 
+  const roadMargin = 20;
+  const horizontalRoadWidth = VERTICAL_ROAD.end - VERTICAL_ROAD.start + VERTICAL_ROAD.spacing * 2 + roadMargin;
+  const verticalRoadDepth = HORIZONTAL_ROAD.end - HORIZONTAL_ROAD.start + HORIZONTAL_ROAD.spacing * 2 + roadMargin;
+  const verticalRoadCenter = (HORIZONTAL_ROAD.start + HORIZONTAL_ROAD.end) / 2;
   for (let z = HORIZONTAL_ROAD.start; z <= HORIZONTAL_ROAD.end; z += HORIZONTAL_ROAD.spacing) {
-    addRoadSegment(group, { width: 170, depth: HORIZONTAL_ROAD.width, position: [0, -0.04, z], orientation: 'horizontal' });
+    addRoadSegment(group, {
+      width: horizontalRoadWidth,
+      depth: HORIZONTAL_ROAD.width,
+      position: [0, -0.04, z],
+      orientation: 'horizontal',
+    });
   }
   for (let x = VERTICAL_ROAD.start; x <= VERTICAL_ROAD.end; x += VERTICAL_ROAD.spacing) {
-    addRoadSegment(group, { width: VERTICAL_ROAD.width, depth: 120, position: [x, -0.04, 55], orientation: 'vertical' });
+    addRoadSegment(group, {
+      width: VERTICAL_ROAD.width,
+      depth: verticalRoadDepth,
+      position: [x, -0.04, verticalRoadCenter],
+      orientation: 'vertical',
+    });
   }
 
   const lotCentersX = createLotCenters(VERTICAL_ROAD);
   const lotCentersZ = createLotCenters(HORIZONTAL_ROAD);
   const lotHalfWidth = (VERTICAL_ROAD.spacing - VERTICAL_ROAD.width) / 2;
   const lotHalfDepth = (HORIZONTAL_ROAD.spacing - HORIZONTAL_ROAD.width) / 2;
-  const lotMargin = 0.3;
+  const lotMargin = 0.25;
+  const maxBuildingWidth = Math.max(3.5, lotHalfWidth * 2 - lotMargin * 2);
+  const maxBuildingDepth = Math.max(3.5, lotHalfDepth * 2 - lotMargin * 2);
+  const minBuildingWidth = Math.max(3.2, maxBuildingWidth * 0.7);
+  const minBuildingDepth = Math.max(3.2, maxBuildingDepth * 0.7);
 
   for (const lotX of lotCentersX) {
     for (const lotZ of lotCentersZ) {
-      if (lotZ < 20 && Math.abs(lotX) < 35) continue;
-      if (Math.abs(lotX) < 8 && lotZ > 32 && lotZ < 70) continue;
-      const width = randomRange(3, 6);
-      const depth = randomRange(3, 6);
-      const height = randomRange(3, 12);
+      const width = randomRange(minBuildingWidth, maxBuildingWidth);
+      const depth = randomRange(minBuildingDepth, maxBuildingDepth);
+      const height = randomRange(5, 18);
       const theme = buildingThemes[Math.floor(Math.random() * buildingThemes.length)];
       const surface = getSurfaceMaterial(theme.surface);
       const maxOffsetX = Math.max(lotHalfWidth - width / 2 - lotMargin, 0);
       const maxOffsetZ = Math.max(lotHalfDepth - depth / 2 - lotMargin, 0);
       const centerX = lotX + randomRange(-maxOffsetX, maxOffsetX);
       const centerZ = lotZ + randomRange(-maxOffsetZ, maxOffsetZ);
+      const isReserved = parkZones.some(
+        (zone) =>
+          centerX + width / 2 > zone.minX - 1 &&
+          centerX - width / 2 < zone.maxX + 1 &&
+          centerZ + depth / 2 > zone.minZ - 1 &&
+          centerZ - depth / 2 < zone.maxZ + 1
+      );
+      if (isReserved) continue;
       const building = createBoxMesh({
         width,
         height,
