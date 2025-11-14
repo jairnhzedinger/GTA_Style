@@ -226,9 +226,12 @@ function render(time) {
 
   const currentSpeed = activeVehicle ? Math.abs(activeVehicle.speed) : player.speed;
   const surfaceLabel = activeVehicle ? 'veículo' : player.surface;
+  const vehicleMaxSpeed = activeVehicle ? activeVehicle.maxSpeed * 3.6 : 0;
 
   hud.update({
     speed: currentSpeed * 3.6,
+    speedLimit: vehicleMaxSpeed,
+    inVehicle: Boolean(activeVehicle),
     stamina: player.stamina,
     surface: surfaceLabel,
     time: time / 1000,
